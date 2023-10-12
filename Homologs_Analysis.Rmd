@@ -1,0 +1,324 @@
+---
+title: "Phylogeny9"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: darkly
+    highlight: rstudio
+    code_folding: show
+    df_print: paged
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+# Parameters
+```{r}
+path<-"Z:/EQUIPE/meiorec/PROJECTS/TransciptomeScreen/Phylo/Data/"
+template_tree_path<-"Z:/EQUIPE/meiorec/PROJECTS/TransciptomeScreen/Phylo/Data/"
+template_tree_file<-"Viridiplantae2.txt"
+```
+
+```{r}
+E_value_threshold<-as.numeric(10e-10)
+Identity_threshold<-10
+Iteration<-"2"
+n_sequences<-10000
+tree_title<-"Tree submitted for paper"
+files_vector<-c("SCEP1_PSI_BLAST_10000_viridi_iteration2_Descriptions.csv",
+                "SCEP2_PSI_BLAST_10000_viridi_iteration2_Descriptions.csv",
+                "ZYP1a_PSI_BLAST_10000_viridi_iteration1_Descriptions.csv")
+
+ordered_names<-c("SCEP1",
+                 "SCEP2",
+                 "ZYP1")
+```
+
+
+# Load libraries
+```{r, message=FALSE, warning=FALSE}
+library(tidyr)
+library(tidyverse)
+library(dplyr)
+library(taxize)
+library(rentrez)
+library("treeio")
+library(ggplot2)
+library(ggtree)
+library(dplyr)
+library(tidytree)
+library(ape)
+library(data.table)
+library(useful)
+library(stringr)
+library(ggrepel)
+#library(peuchmar)
+
+outersect <- function(x, y) {
+  sort(c(setdiff(x, y),
+         setdiff(y, x)))
+}
+
+get_lines <-function(df, vector, df_column){
+  len<-nrow(df)
+  result_df <- data.frame(matrix(ncol = ncol(df), nrow = 0))
+  colnames(result_df) <- colnames(df)
+  for (i in 1:len){
+    if (any(vector  %in% df_column[i])==TRUE){
+      result_df<-rbind(result_df,df[i,])
+    }
+  }
+  print(result_df)
+}
+
+```
+# Load Data
+
+NCBI downloaded data description table
+
+```{r}
+df<-data.frame()
+for (i in c(1:length(files_vector))){
+  file<-read.csv(paste(path, files_vector[i], sep = ""), header=TRUE)
+  file$file<-ordered_names[i]
+  df<-rbind(df, file)
+}
+```
+
+# Filtering data
+```{r}
+df$E.value<-as.numeric(df$E.value)
+df$Per..ident<-as.numeric(df$Per..ident)
+df_raw<-df
+
+df<-df %>% filter(E.value < E_value_threshold) %>% filter(Per..ident > Identity_threshold)
+df[order(df$file,df$Scientific.Name),]
+
+tail(df)
+
+```
+
+```{r}
+species_to_change<-c("Vigna angularis var. angularis",
+                     "Perilla frutescens var. hirtella",
+                     "Perilla frutescens var. frutescens",
+                     "Panicum hallii var. hallii",
+                     "Oryza sativa Indica Group",
+                     "Olea europaea var. sylvestris",
+                     "Olea europaea subsp. europaea",
+                     "Hordeum vulgare subsp. vulgare",
+                     "Cucurbita argyrosperma subsp. sororia",
+                     "Cucurbita argyrosperma subsp. argyrosperma",
+                     "Cucumis melo var. makuwa",
+                     "Camellia sinensis var. sinensis",
+                     "Brassica rapa subsp. trilocularis",
+                     "Brassica oleracea var. oleracea",
+                     "Arabidopsis lyrata subsp. lyrata",
+                     "Ananas comosus var. bracteatus",
+                     "Oryza sativa Japonica Group",
+                     "Beta vulgaris subsp. vulgaris",
+                     "Daucus carota subsp. sativus",
+                     "Musa acuminata subsp. malaccensis",
+                     "Physcomitrium patens",
+                     "Volvox carteri f. nagariensis",
+                     "Coccomyxa subellipsoidea C-169",
+                     "Micromonas pusilla CCMP1545 ")
+
+species_to_change_to<-c("Vigna angularis",
+                     "Perilla frutescens",
+                     "Perilla frutescens",
+                     "Panicum hallii",
+                     "Oryza sativa",
+                     "Olea europaea",
+                     "Olea europaea",
+                     "Hordeum vulgare",
+                     "Cucurbita argyrosperma",
+                     "Cucurbita argyrosperma",
+                     "Cucumis melo",
+                     "Camellia sinensis",
+                     "Brassica rapa",
+                     "Brassica oleracea",
+                     "Arabidopsis lyrata",
+                     "Ananas comosus",
+                     "Oryza sativa",
+                     "Beta vulgaris",
+                     "Daucus carota",
+                     "Musa acuminata",
+                     "Physcomitrella patens",
+                     "Volvox carteri",
+                     "Coccomyxa subellipsoidea",
+                     "Micromonas pusilla")
+```
+
+```{r}
+path_phylo3<-template_tree_path
+plants<-read.newick(paste(path_phylo3, tree_file, sep = ""))
+plants$tip.label<- sub("_", " ", plants$tip.label)
+
+for (i in 1:length(species_to_change)){
+  if (length(species_to_change)!=length(species_to_change_to)){
+    warning("The two character vectors have different lengths !")
+  }
+  df$Scientific.Name[df$Scientific.Name == species_to_change[i]] <- species_to_change_to[i]
+} 
+
+df_homologs<-get_lines(df, plants$tip.label, df$Scientific.Name)
+
+write.csv(df_homologs,paste(path,"species_homologs.txt", sep = ""), row.names = FALSE)
+```
+
+
+# Exploring data
+
+```{r}
+for (i in c(1:length(files_vector))){
+species_summary<-get_lines(df,c(ordered_names[i]),df$file) %>% 
+  group_by(Scientific.Name) %>%
+  summarise(no_rows = length(Scientific.Name))
+names(species_summary)<- c('Scientific.Name', paste0("number_",ordered_names[i]))
+print(species_summary)
+}
+```
+
+Look into specific species:
+```{r}
+sp<-c("Selaginella moellendorffii")
+specific_sp<-get_lines(df,sp,df$Scientific.Name)
+```
+
+# Load tree
+
+Loading tree (here tree taken from Fernandes et al. 2018, subset viridiplantae):
+```{r}
+plants<-read.newick(paste(path,template_tree_file, sep = ""))
+```
+
+# Exploring tree 
+
+## Full tree
+
+Visualizing tree data:
+```{r}
+plants$tip.label<- sub("_", " ", plants$tip.label)
+print(n=250,as_tibble(plants))
+```
+
+
+# Comparing species set
+
+Vector containing all the species in the plant tree:
+```{r}
+plant_species<-plants$tip.label
+plant_species
+```
+
+
+```{r}
+scep1<-get_lines(df, c("SCEP1"), df$file)
+scep1_sp_list<-scep1$Scientific.Name
+
+scep2<-get_lines(df, c("SCEP2"), df$file)
+scep2_sp_list<-scep2$Scientific.Name
+
+zyp1<-get_lines(df, c("ZYP1"), df$file)
+zyp1_sp_list<-zyp1$Scientific.Name
+```
+
+Intersection between all proteins and plant tree:
+```{r}
+intersecting_species_1<-intersect(plant_species,scep1_sp_list)
+intersecting_species_2<-intersect(plant_species,scep2_sp_list)
+intersecting_species_3<-intersect(plant_species,zyp1_sp_list)
+
+intersecting_species_12<-intersect(intersecting_species_1,intersecting_species_2)
+intersecting_species_123<-intersect(intersecting_species_12,intersecting_species_3)
+intersecting_species_full<-intersect(intersecting_species_123,intersecting_species_z)
+
+```
+
+# Annotating tree 
+
+Producing annotation matrix:
+```{r}
+df_for_output<-df
+number_of_homologs<-table(df$Scientific.Name, df$file)
+df_tree_species<-get_lines(df, plant_species, df$Scientific.Name)
+number_of_homologs_from_tree<-table(df_tree_species$Scientific.Name, df_tree_species$file)
+sp_mat<-as.matrix(number_of_homologs_from_tree)
+sp_mat[sp_mat>0] <- "present"
+sp_mat[sp_mat==0] <- "absent"
+sp_mat
+```
+Adding fully absent lines
+```{r}
+row.names(sp_mat)
+outs<-outersect(plant_species,row.names(sp_mat))
+miss_mat<-matrix(,nrow=length(outs), ncol = length(ordered_names))
+row.names(miss_mat)<-outs
+miss_mat[]<-"absent"
+full_mat<-rbind(sp_mat,miss_mat)
+df<-data.frame(full_mat)
+df
+```
+
+
+```{r}
+p1_1<-ggtree(plants, color="black",
+           layout = "rectangular",
+           ladderize = TRUE)+
+   #geom_tiplab(geom='label',
+    #          color="black",
+     #         size=2.2)+
+  #geom_nodepoint(color="black", alpha=1, size=0)+
+  ggplot2::xlim(0, 40)
+  
+  #ggplot2::ylim(0, 50)+
+  #ylim(0,50)
+  #geom_tippoint(color="#FDAC4F", shape=8, size=2)
+
+```
+# Drawing tree and heatmap
+
+```{r}
+p1<-p1_1 %<+% df + geom_tiplab(
+                        geom = "text",
+                        size=7)+
+  ggtitle(paste(tree_title,
+                paste(paste("E.value<",E_value_threshold, sep=""),
+                      paste(paste("%identity>",Identity_threshold, sep=""),
+                            paste(paste("n=",n_sequences, sep=""), 
+                                  paste("iteration", Iteration),sep=", "),sep=", "),sep=", "),sep=", "))
+```
+
+
+```{r}
+
+gheatmap(p1, df, offset=13, width=0.6, font.size=7, 
+         colnames_angle=0, hjust=0, 
+         colnames=TRUE, color="azure", colnames_position="top",
+         colnames_offset_x = -1) +
+  scale_fill_manual(breaks=c("present", "absent", "Unsure"), 
+                    values=c("dodgerblue1", "firebrick1", "bisque"), name="Homologs")+
+  theme(legend.key.size = unit(1, 'cm'), #change legend key size
+        legend.key.height = unit(1, 'cm'), #change legend key height*
+        legend.key.width = unit(1, 'cm'), #change legend key width
+        legend.title = element_text(size=20), #change legend title font size
+        legend.text = element_text(size=18))+ #change legend text font size
+  scale_x_ggtree()
+
+```
+
+```{r,eval=FALSE}
+ggsave(filename = "ncbi_blast_intersect_tree.svg" , device = "svg", 
+       width = 20, height = 18 , units = "in" ,
+       limitsize = FALSE, path = path)
+```
+
+# SupTable
+
+```{r}
+df_for_output<-get_lines(df_for_output,plant_species, df_for_output$Scientific.Name)
+
+write.csv2(df_for_output, paste(path,"Homologs_SupTable.csv", sep=""), row.names = FALSE)
+```
+
